@@ -13,6 +13,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
+import android.view.TextureView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import com.xmcam.data.EventRec
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,8 +40,8 @@ import java.util.Locale
 /**
  * Galería de grabaciones de la tarjeta SD: cuadrícula de miniaturas por día (mensaje OPFileQuery).
  *
- * Miniatura (por orden): foto de una alarma dentro del clip, fotograma capturado al reproducirlo,
- * o una tarjeta con la hora. Bajo cada clip se muestra el motivo de la grabación.
+ * Miniatura (por orden): foto de una alarma dentro del clip, fotograma generado reproduciendo
+ * unos instantes el clip ([captureRtspThumbnail]) o, si eso falla, una tarjeta con la hora. Bajo cada clip se muestra el motivo de la grabación.
  * Al volver desde [ClipPlayerScreen] se restauran el día y la posición de la lista.
  */
 @Composable
@@ -58,6 +63,22 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
     val gridState = rememberLazyGridState(restore?.index ?: 0, restore?.offset ?: 0)
     var pendingRestore by remember { mutableStateOf(restore != null) }
 
+    // Generación de miniaturas: estado de progreso y superficie diminuta donde se reproduce cada clip.
+    val ctx = LocalContext.current
+    var thumbTick by remember { mutableIntStateOf(0) }
+    var genTexture by remember { mutableStateOf<TextureView?>(null) }
+    var generating by remember { mutableStateOf(false) }
+    var genDone by remember { mutableIntStateOf(0) }
+    var genTotal by remember { mutableIntStateOf(0) }
+    var genFailed by remember { mutableStateOf(false) }
+    var genTrigger by remember { mutableIntStateOf(0) }
+    // Alarma de esta cámara que caiga dentro del clip [f] (da foto y motivo reales).
+    val eventFor: (JSONObject) -> EventRec? = { f ->
+        val b = runCatching { fmt.parse(f.optString("BeginTime"))?.time }.getOrNull()
+        val e = runCatching { fmt.parse(f.optString("EndTime"))?.time }.getOrNull()
+        if (b != null && e != null) events.firstOrNull { x -> x.cameraId == cam.id && x.time in b..e } else null
+    }
+
     LaunchedEffect(day) {
         files = app.playbackCache["$camId|$day"] ?: emptyList()
         if (files.isEmpty()) msg = "Cargando…"
@@ -77,6 +98,33 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
         }
     }
 
+    // Genera, uno a uno, las miniaturas de los clips que no tienen foto de alarma ni fotograma guardado.
+    LaunchedEffect(files, genTrigger) {
+        if (!app.store.autoThumbs || files.isEmpty()) return@LaunchedEffect
+        val pending = files.filter { f ->
+            eventFor(f)?.snapshot == null && !app.thumbFile(camId, f.optString("BeginTime")).exists()
+        }.take(30)
+        if (pending.isEmpty()) return@LaunchedEffect
+        genTexture = null
+        generating = true; genFailed = false; genDone = 0; genTotal = pending.size
+        try {
+            var fails = 0
+            for (f in pending) {
+                var tv = genTexture
+                var waited = 0
+                while (tv == null && waited < 20) { delay(100); tv = genTexture; waited++ }
+                if (tv == null) break
+                val begin = f.optString("BeginTime")
+                val url = cam.playbackUrl(app.store.playbackTemplate, begin, f.optString("EndTime"))
+                val ok = captureRtspThumbnail(ctx, url, tv, app.thumbFile(camId, begin))
+                genDone++
+                if (ok) { thumbTick++; fails = 0 } else if (++fails >= 2) { genFailed = true; break }
+            }
+        } finally {
+            generating = false
+        }
+    }
+
     Scaffold(topBar = { Bar("Grabaciones · ${cam.name}", back) }) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 12.dp)) {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
@@ -86,6 +134,26 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
                 }
             }
             Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (generating) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AndroidView(
+                    factory = { TextureView(it).also { v -> genTexture = v } },
+                    modifier = Modifier.size(48.dp, 27.dp).clip(RoundedCornerShape(6.dp))
+                )
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                    Text("Generando miniaturas $genDone/$genTotal…", style = MaterialTheme.typography.bodySmall)
+                    LinearProgressIndicator(
+                        progress = { if (genTotal == 0) 0f else genDone / genTotal.toFloat() },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                }
+            }
+            if (genFailed) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "No se pudieron generar miniaturas. Revisa la dirección de reproducción en Ajustes de la app.",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
+                )
+                TextButton({ genTrigger++ }) { Text("Reintentar") }
+            }
             Spacer(Modifier.height(8.dp))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2), state = gridState,
@@ -97,10 +165,9 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
                     val end = f.optString("EndTime")
                     val b = runCatching { fmt.parse(begin)?.time }.getOrNull()
                     val e = runCatching { fmt.parse(end)?.time }.getOrNull()
-                    // Alarma de esta cámara que caiga dentro del clip (da foto y motivo reales).
-                    val ev = if (b != null && e != null)
-                        events.firstOrNull { x -> x.cameraId == cam.id && x.time in b..e } else null
-                    val thumb = ev?.snapshot ?: app.thumbFile(camId, begin).takeIf { it.exists() }?.absolutePath
+                    val tick = thumbTick // al leerlo, la miniatura se actualiza en cuanto se genera
+                    val ev = eventFor(f)
+                    val thumb = ev?.snapshot ?: app.thumbFile(camId, begin).takeIf { tick >= 0 && it.exists() }?.absolutePath
                     val seconds = if (b != null && e != null) ((e - b) / 1000).coerceAtLeast(0) else 0L
                     val reason = ev?.let { XmEvents.label(it.event) } ?: reasonFromFileName(f.optString("FileName"))
                     ClipTile(begin.takeLast(8).take(5), formatDuration(seconds), reason, thumb) {

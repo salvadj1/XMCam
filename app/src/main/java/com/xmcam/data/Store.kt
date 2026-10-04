@@ -70,6 +70,11 @@ class Store(ctx: Context) {
         get() = prefs.getBoolean("autoSnap", true)
         set(v) = prefs.edit().putBoolean("autoSnap", v).apply()
 
+    /** Si al abrir Grabaciones se generan miniaturas reproduciendo unos instantes de cada clip sin foto. */
+    var autoThumbs: Boolean
+        get() = prefs.getBoolean("autoThumbs", true)
+        set(v) = prefs.edit().putBoolean("autoThumbs", v).apply()
+
     /** Plantilla RTSP para reproducir clips de la SD (ver [Camera.playbackUrl]). Experimental. */
     var playbackTemplate: String
         get() = prefs.getString("playbackTemplate", DEFAULT_PLAYBACK_TEMPLATE)!!
