@@ -28,6 +28,19 @@ data class Camera(
         return "rtsp://$host:$rtspPort/user=$user&password=$pw&channel=${channel + 1}&stream=$stream.sdp?real_stream"
     }
 
+    /**
+     * Construye la URL RTSP de reproducción de un clip a partir de [template].
+     * Variables: {host} {port} (RTSP) {user} {pass} {channel} (empieza en 1) {start} {end}.
+     * [begin] y [end] llegan como "yyyy-MM-dd HH:mm:ss" y se sustituyen como "yyyy_MM_dd_HH_mm_ss".
+     */
+    fun playbackUrl(template: String, begin: String, end: String): String {
+        val pw = if (rtspHash) XmCrypto.hashPassword(password) else password
+        fun t(s: String) = s.replace("-", "_").replace(":", "_").replace(" ", "_")
+        return template.replace("{host}", host).replace("{port}", rtspPort.toString())
+            .replace("{user}", user).replace("{pass}", pw).replace("{channel}", (channel + 1).toString())
+            .replace("{start}", t(begin)).replace("{end}", t(end))
+    }
+
     /** URL de captura JPEG por HTTP. */
     fun snapshotUrl(): String {
         val u = URLEncoder.encode(user, "UTF-8")

@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.xmcam.App
@@ -42,43 +43,52 @@ fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
         }.getOrElse { "Error: ${it.message}" }
     }
 
-    // (título, bloque de configuración, filtro regex de ajustes visibles)
+    // (título, descripción, bloque de configuración, filtro regex de ajustes visibles)
     val blocks = listOf(
-        Triple("Alarma de movimiento: qué hacer", "Detect.MotionDetect", "Enable|EventHandler"),
-        Triple("Alarma de persona: qué hacer", "Detect.HumanDetection", "Enable|EventHandler|Sensit"),
-        Triple("Email (SMTP)", "NetWork.NetEmail", null),
-        Triple("FTP", "NetWork.NetFTP", null),
-        Triple("Codificación de vídeo", "Simplify.Encode", null),
-        Triple("Imagen (brillo, espejo, IR...)", "Camera.Param", null),
-        Triple("Texto en pantalla (OSD)", "AVEnc.VideoWidget", null),
-        Triple("Red", "NetWork.NetCommon", null),
-        Triple("WiFi", "NetWork.Wifi", null),
-        Triple("Hora y NTP", "NetWork.NetNTP", null),
-        Triple("Grabación", "Record", null),
-        Triple("Almacenamiento (SD)", "StorageInfo", null),
-        Triple("Mantenimiento automático", "General.AutoMaintain", null),
-        Triple("Idioma y formato de fecha", "General.Location", null),
-        Triple("PTZ (protocolo)", "Uart.PTZ", null)
+        CfgBlock("Alarma de movimiento", "Qué hace la cámara al detectar movimiento: grabar, enviar email, sonar...", "Detect.MotionDetect", "Enable|EventHandler"),
+        CfgBlock("Alarma de persona", "Acciones y sensibilidad cuando detecta una persona.", "Detect.HumanDetection", "Enable|EventHandler|Sensit"),
+        CfgBlock("Email (SMTP)", "Servidor y cuenta para que la cámara envíe avisos por correo.", "NetWork.NetEmail", null),
+        CfgBlock("FTP", "Servidor donde la cámara sube fotos y vídeos de las alarmas.", "NetWork.NetFTP", null),
+        CfgBlock("Codificación de vídeo", "Resolución, calidad y fotogramas del flujo principal y secundario.", "Simplify.Encode", null),
+        CfgBlock("Imagen", "Brillo, contraste, espejo, giro y modo infrarrojo.", "Camera.Param", null),
+        CfgBlock("Texto en pantalla (OSD)", "Nombre y hora que se dibujan sobre el vídeo.", "AVEnc.VideoWidget", null),
+        CfgBlock("Red", "IP, puerta de enlace y puertos de la cámara.", "NetWork.NetCommon", null),
+        CfgBlock("WiFi", "Red inalámbrica a la que se conecta la cámara.", "NetWork.Wifi", null),
+        CfgBlock("Hora y NTP", "Zona horaria y sincronización automática de la hora.", "NetWork.NetNTP", null),
+        CfgBlock("Grabación", "Modo, duración y programación de las grabaciones en la SD.", "Record", null),
+        CfgBlock("Almacenamiento (SD)", "Capacidad, espacio libre y formateo de la tarjeta SD.", "StorageInfo", null),
+        CfgBlock("Mantenimiento automático", "Reinicio y borrado automático programados.", "General.AutoMaintain", null),
+        CfgBlock("Idioma y fecha", "Idioma del menú de la cámara y formato de fecha y hora.", "General.Location", null),
+        CfgBlock("PTZ (protocolo)", "Protocolo, dirección y velocidad del motor de giro.", "Uart.PTZ", null)
     )
 
     Scaffold(topBar = { Bar("Ajustes · ${cam.name}", back) }) { pad ->
         Column(Modifier.padding(pad).padding(12.dp).verticalScroll(rememberScrollState())) {
             SectionTitle("Información")
-            Text(info, style = MaterialTheme.typography.bodySmall)
+            Card(Modifier.fillMaxWidth()) { Text(info, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
 
             SectionTitle("En esta app")
-            Row {
-                Text("Vigilar alarmas de esta cámara", Modifier.weight(1f))
+            SettingRow("Vigilar alarmas de esta cámara", "Recibes avisos de esta cámara cuando la vigilancia en segundo plano está activada.") {
                 Switch(monitor, { monitor = it; app.saveCameras(app.cameras.value.map { c -> if (c.id == cam.id) c.copy(monitor = it) else c }) })
             }
-            Row {
-                Text("RTSP con hash XM (si el vídeo no abre)", Modifier.weight(1f))
+            SettingRow("RTSP con hash XM", "Actívalo solo si el vídeo no abre: algunos firmwares piden la contraseña en formato hash.") {
                 Switch(rtspHash, { rtspHash = it; app.saveCameras(app.cameras.value.map { c -> if (c.id == cam.id) c.copy(rtspHash = it) else c }) })
             }
 
             SectionTitle("Configuración de la cámara")
-            blocks.forEach { (title, name, filter) ->
-                OutlinedButton({ nav(Screen.Config(camId, name, filter)) }, Modifier.fillMaxWidth().padding(vertical = 2.dp)) { Text(title) }
+            blocks.forEach { blk ->
+                Card(
+                    onClick = { nav(Screen.Config(camId, blk.name, blk.filter)) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(blk.title, style = MaterialTheme.typography.titleSmall)
+                            Text(blk.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             Row(Modifier.padding(top = 6.dp)) {
                 OutlinedTextField(custom, { custom = it }, label = { Text("Otro bloque (p. ej. Detect.BlindDetect)") },
@@ -87,14 +97,18 @@ fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
             }
 
             SectionTitle("Mantenimiento")
-            Button({
-                scope.launch {
-                    val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-                    msg = runCatching { session.exec { it.setTime(now) } }.fold({ "Hora sincronizada: $now" }, { "Error: ${it.message}" })
-                }
-            }) { Text("Sincronizar hora con el móvil") }
-            OutlinedButton({ confirmReboot = true }, Modifier.padding(top = 6.dp)) { Text("Reiniciar cámara") }
-            if (msg.isNotEmpty()) Text(msg, Modifier.padding(top = 8.dp))
+            SettingRow("Sincronizar hora", "Pone el reloj de la cámara en hora con el del móvil.") {
+                Button({
+                    scope.launch {
+                        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+                        msg = runCatching { session.exec { it.setTime(now) } }.fold({ "Hora sincronizada: $now" }, { "Error: ${it.message}" })
+                    }
+                }) { Text("Sincronizar") }
+            }
+            SettingRow("Reiniciar cámara", "Reinicia el equipo; la configuración se conserva.") {
+                OutlinedButton({ confirmReboot = true }) { Text("Reiniciar") }
+            }
+            if (msg.isNotEmpty()) Text(msg, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
     }
 
@@ -110,3 +124,6 @@ fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
         dismissButton = { TextButton({ confirmReboot = false }) { Text("Cancelar") } }
     )
 }
+
+/** Un bloque de configuración de la cámara: [title] y [description] se muestran en la lista; [name] y [filter] abren el editor. */
+private data class CfgBlock(val title: String, val description: String, val name: String, val filter: String?)

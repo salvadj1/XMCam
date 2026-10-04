@@ -67,6 +67,10 @@ object RuleEngine {
         if (actions.any { it.type == ActionType.SNAPSHOT }) {
             snap = Net.snapshot(cam, File(app.filesDir, "snaps"))?.absolutePath
         }
+        // Foto automática en cada inicio de alarma (miniatura para Grabaciones y Eventos), aunque ninguna regla la pida.
+        if (snap == null && ev.status == "Start" && app.store.autoSnapOnAlarm) {
+            snap = Net.snapshot(cam, File(app.filesDir, "snaps"))?.absolutePath
+        }
         actions.filter { it.type == ActionType.PTZ_PRESET }.forEach { a ->
             runCatching {
                 DvripClient(cam.host, cam.port).use { c ->

@@ -2,58 +2,174 @@
 
 package com.xmcam.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.xmcam.App
+import com.xmcam.PlaybackPos
 import com.xmcam.data.ControlSession
+import com.xmcam.protocol.XmEvents
 import org.json.JSONObject
+import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.util.Locale
 
 /**
- * Grabaciones de la tarjeta SD: lista de clips de un día (mensaje OPFileQuery).
- * PENDIENTE: reproducir y descargar el clip (ver README, sección "Pendiente").
+ * Galería de grabaciones de la tarjeta SD: cuadrícula de miniaturas por día (mensaje OPFileQuery).
+ *
+ * Miniatura (por orden): foto de una alarma dentro del clip, fotograma capturado al reproducirlo,
+ * o una tarjeta con la hora. Bajo cada clip se muestra el motivo de la grabación.
+ * Al volver desde [ClipPlayerScreen] se restauran el día y la posición de la lista.
  */
 @Composable
-fun PlaybackScreen(camId: String, back: () -> Unit) {
-    val cam = App.instance.cameras.value.first { it.id == camId }
+fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
+    val app = App.instance
+    val cam = app.cameras.value.first { it.id == camId }
     val session = remember { ControlSession(cam) }
     DisposableEffect(Unit) { onDispose { session.close() } }
 
-    var day by remember { mutableStateOf(LocalDate.now()) }
-    var files by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var msg by remember { mutableStateOf("Cargando…") }
+    val events by app.events.collectAsState()
+    val fmt = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US) }
+    val days = remember { (0..6).map { LocalDate.now().minusDays(it.toLong()) } }
+
+    // Posición guardada al abrir un clip (se consume: al entrar desde Inicio se empieza limpio).
+    val restore = remember { app.playbackPos.remove(camId)?.takeIf { it.day in days } }
+    var day by remember { mutableStateOf(restore?.day ?: days.first()) }
+    var files by remember { mutableStateOf(app.playbackCache["$camId|$day"] ?: emptyList()) }
+    var msg by remember { mutableStateOf(if (files.isEmpty()) "Cargando…" else "${files.size} grabaciones") }
+    val gridState = rememberLazyGridState(restore?.index ?: 0, restore?.offset ?: 0)
+    var pendingRestore by remember { mutableStateOf(restore != null) }
 
     LaunchedEffect(day) {
-        msg = "Cargando…"
+        files = app.playbackCache["$camId|$day"] ?: emptyList()
+        if (files.isEmpty()) msg = "Cargando…"
         runCatching { session.exec { it.queryFiles("$day 00:00:00", "$day 23:59:59", cam.channel) } }
-            .onSuccess { files = it; msg = if (it.isEmpty()) "Sin grabaciones este día" else "${it.size} grabaciones" }
-            .onFailure { files = emptyList(); msg = "Error: ${it.message}" }
+            .onSuccess {
+                files = it.sortedByDescending { f -> f.optString("BeginTime") }
+                app.playbackCache["$camId|$day"] = files
+                msg = if (it.isEmpty()) "Sin grabaciones este día" else "${it.size} grabaciones"
+            }
+            .onFailure { if (files.isEmpty()) msg = "Error: ${it.message}" }
+    }
+    // Si la lista llega después de abrir la pantalla, recoloca el scroll donde estaba.
+    LaunchedEffect(files) {
+        if (pendingRestore && files.isNotEmpty() && restore != null) {
+            gridState.scrollToItem(restore.index, restore.offset)
+            pendingRestore = false
+        }
     }
 
     Scaffold(topBar = { Bar("Grabaciones · ${cam.name}", back) }) { pad ->
-        Column(Modifier.padding(pad).padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton({ day = day.minusDays(1) }) { Text("◀") }
-                Text("$day", Modifier.weight(1f).padding(horizontal = 8.dp), style = MaterialTheme.typography.titleMedium)
-                OutlinedButton(enabled = day < LocalDate.now(), onClick = { day = day.plusDays(1) }) { Text("▶") }
+        Column(Modifier.padding(pad).padding(horizontal = 12.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                days.forEachIndexed { i, d ->
+                    val label = when (i) { 0 -> "Hoy"; 1 -> "Ayer"; else -> "%02d/%02d".format(d.dayOfMonth, d.monthValue) }
+                    FilterChip(selected = d == day, onClick = { day = d }, label = { Text(label) }, modifier = Modifier.padding(end = 6.dp))
+                }
             }
-            Text(msg, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
-            LazyColumn {
+            Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2), state = gridState,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 items(files) { f ->
-                    Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                        Column(Modifier.padding(10.dp)) {
-                            Text("${f.optString("BeginTime")}  →  ${f.optString("EndTime").takeLast(8)}")
-                            Text(f.optString("FileName"), style = MaterialTheme.typography.bodySmall)
-                        }
+                    val begin = f.optString("BeginTime")
+                    val end = f.optString("EndTime")
+                    val b = runCatching { fmt.parse(begin)?.time }.getOrNull()
+                    val e = runCatching { fmt.parse(end)?.time }.getOrNull()
+                    // Alarma de esta cámara que caiga dentro del clip (da foto y motivo reales).
+                    val ev = if (b != null && e != null)
+                        events.firstOrNull { x -> x.cameraId == cam.id && x.time in b..e } else null
+                    val thumb = ev?.snapshot ?: app.thumbFile(camId, begin).takeIf { it.exists() }?.absolutePath
+                    val seconds = if (b != null && e != null) ((e - b) / 1000).coerceAtLeast(0) else 0L
+                    val reason = ev?.let { XmEvents.label(it.event) } ?: reasonFromFileName(f.optString("FileName"))
+                    ClipTile(begin.takeLast(8).take(5), formatDuration(seconds), reason, thumb) {
+                        app.playbackPos[camId] = PlaybackPos(day, gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+                        nav(Screen.Clip(camId, begin, end))
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * Miniatura de un clip: imagen (o tarjeta con la hora), duración abajo a la derecha y,
+ * debajo, la hora y el motivo de la grabación. Reutilizable para cualquier lista de vídeos.
+ *
+ * @param timeLabel    hora de inicio mostrada bajo la miniatura.
+ * @param duration     duración ya formateada (p. ej. "1:10").
+ * @param reason       motivo de la grabación (p. ej. "Movimiento").
+ * @param snapshotPath ruta de una imagen para la miniatura, o null para usar la tarjeta con la hora.
+ * @param onClick      acción al tocar la miniatura.
+ */
+@Composable
+fun ClipTile(timeLabel: String, duration: String, reason: String, snapshotPath: String?, onClick: () -> Unit) {
+    val bmp = remember(snapshotPath) {
+        snapshotPath?.let { BitmapFactory.decodeFile(it, BitmapFactory.Options().apply { inSampleSize = 4 }) }
+    }
+    Column(Modifier.clickable(onClick = onClick)) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            if (bmp != null) Image(bmp.asImageBitmap(), null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+            else Text(timeLabel, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Surface(shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = 0.55f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)) {
+                Text("▶", Modifier.padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
+            }
+            Text(
+                duration, Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                color = Color.White, style = MaterialTheme.typography.labelSmall
+            )
+        }
+        Text(timeLabel, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium)
+        Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Deduce el motivo de la grabación por la letra entre corchetes del nombre de archivo
+ * (p. ej. "...[M]..."). Mapeo habitual en firmwares XM, sin verificar con todas las cámaras:
+ * M = movimiento, A = alarma, H = manual, R = continua.
+ */
+private fun reasonFromFileName(name: String): String {
+    val tag = Regex("\\[([A-Za-z])\\]").find(name)?.groupValues?.get(1)?.uppercase()
+    return when (tag) {
+        "M" -> "Movimiento"
+        "A" -> "Alarma"
+        "H" -> "Manual"
+        "R" -> "Grabación continua"
+        else -> "Grabación"
+    }
+}
+
+/** Convierte [totalSeconds] a "m:ss" o "h:mm:ss". */
+private fun formatDuration(totalSeconds: Long): String {
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }

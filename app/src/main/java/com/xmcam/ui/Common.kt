@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.xmcam.App
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -17,8 +20,11 @@ sealed interface Screen {
     data object Add : Screen
     data object Events : Screen
     data object Rules : Screen
+    data object AppSettings : Screen
     data class Live(val camId: String) : Screen
     data class Playback(val camId: String) : Screen
+    /** Reproductor de un clip de la SD; [begin] y [end] en formato "yyyy-MM-dd HH:mm:ss". */
+    data class Clip(val camId: String, val begin: String, val end: String) : Screen
     data class Settings(val camId: String) : Screen
     /** Editor genérico de un bloque de configuración; [filter] es una regex sobre la ruta de cada ajuste. */
     data class Config(val camId: String, val name: String, val filter: String?) : Screen
@@ -27,7 +33,11 @@ sealed interface Screen {
 
 @Composable
 fun XmTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+    val app = App.instance
+    val selected by app.themeId.collectAsState()
+    val follow by app.followSystem.collectAsState()
+    val active = resolveTheme(selected, follow, isSystemInDarkTheme())
+    MaterialTheme(colorScheme = active.colorScheme()) {
         Surface(Modifier.fillMaxSize()) { content() }
     }
 }

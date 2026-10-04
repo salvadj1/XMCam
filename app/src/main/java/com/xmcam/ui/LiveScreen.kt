@@ -9,13 +9,17 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -45,8 +49,15 @@ fun LiveScreen(camId: String, back: () -> Unit) {
     val session = remember { ControlSession(cam) }
     DisposableEffect(Unit) { onDispose { session.close() } }
 
-    var stream by remember { mutableIntStateOf(1) }   // 0 = principal (HD), 1 = secundario (ligero)
+    var stream by remember { mutableIntStateOf(App.instance.store.defaultStream) }   // 0 = principal (HD), 1 = secundario (ligero)
     var status by remember { mutableStateOf("") }
+
+    // Mantiene la pantalla encendida mientras el directo está abierto (si el usuario lo activó).
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        view.keepScreenOn = App.instance.store.keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
     var muted by remember { mutableStateOf(false) }
 
     val player = remember(stream) {
@@ -89,16 +100,20 @@ fun LiveScreen(camId: String, back: () -> Unit) {
 
     Scaffold(topBar = { Bar(cam.name, back) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
-            AndroidView(
-                factory = { PlayerView(it).apply { useController = false } },
-                update = { it.player = player },
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-            )
+            Box(Modifier.padding(12.dp).fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp))) {
+                AndroidView(
+                    factory = { PlayerView(it).apply { useController = false } },
+                    update = { it.player = player },
+                    modifier = Modifier.matchParentSize()
+                )
+                LiveBadge("EN VIVO", Color(0xFFD32F2F), Modifier.align(Alignment.TopStart).padding(8.dp))
+                LiveBadge(if (stream == 0) "HD" else "SD", Color.Black.copy(alpha = 0.55f), Modifier.align(Alignment.TopEnd).padding(8.dp))
+            }
             Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(stream == 0, { stream = 0 }, { Text("HD") })
                 FilterChip(stream == 1, { stream = 1 }, { Text("SD") })
-                OutlinedButton({ muted = !muted }) { Text(if (muted) "Sin audio" else "Audio") }
-                OutlinedButton({
+                FilledTonalButton({ muted = !muted }) { Text(if (muted) "Sin audio" else "Audio") }
+                FilledTonalButton({
                     scope.launch {
                         status = "Capturando…"
                         val ok = withContext(Dispatchers.IO) { Net.snapshot(cam, ctx.cacheDir)?.let { Net.saveToGallery(ctx, it) } ?: false }
@@ -108,8 +123,9 @@ fun LiveScreen(camId: String, back: () -> Unit) {
             }
             if (status.isNotEmpty()) Text(status, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
 
-            SectionTitle("PTZ · joystick (suelta para parar)")
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LiveSection("Control de la cámara", "Arrastra el joystick para mover la cámara; al soltar se detiene.")
+            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 PtzJoystick(Modifier.size(230.dp)) { cmd, step -> ptzCtl.set(cmd, step) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
                     HoldButton("Z+", { ptzCtl.set(PtzCmd.ZOOM_IN, 5) }, { ptzCtl.set(null) })
@@ -118,8 +134,9 @@ fun LiveScreen(camId: String, back: () -> Unit) {
                     HoldButton("F−", { ptzCtl.set(PtzCmd.FOCUS_NEAR, 5) }, { ptzCtl.set(null) })
                 }
             }
+            }
 
-            SectionTitle("Presets (toque = ir, pulsación larga = guardar)")
+            LiveSection("Posiciones guardadas", "Toca un número para ir a esa posición; mantén pulsado para guardar la actual.")
             Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (1..6).forEach { n ->
                     Box(
@@ -131,6 +148,24 @@ fun LiveScreen(camId: String, back: () -> Unit) {
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** Etiqueta pequeña sobre el vídeo (EN VIVO, HD/SD). [color] es el fondo; el texto va en blanco. */
+@Composable
+private fun LiveBadge(text: String, color: Color, modifier: Modifier = Modifier) {
+    Text(
+        text, modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+        color = Color.White, style = MaterialTheme.typography.labelSmall
+    )
+}
+
+/** Título de sección con una línea explicativa debajo. */
+@Composable
+private fun LiveSection(title: String, caption: String) {
+    Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
