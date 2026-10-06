@@ -9,6 +9,9 @@ sin la app oficial ni la nube. Código ligero: sin Room, sin Retrofit, sin Hilt;
 
 Documentación del protocolo: [`docs/PROTOCOL_XM.md`](docs/PROTOCOL_XM.md).
 
+Investigación (sin implementar) de un segundo protocolo, para una posible compatibilidad futura con otras marcas:
+[`docs/PROTOCOL_CLOSELI.md`](docs/PROTOCOL_CLOSELI.md) — cámaras Blurams / Ease Life (SDK ArcSoft Closeli).
+
 ---
 
 ## 1. Qué hace
@@ -186,6 +189,7 @@ Pulsa *Copiar resultado* para pegarlo donde necesites.
 | Pantalla completa / giro automático | Solo vertical |
 | Tours PTZ, iris | Comandos descritos en el protocolo |
 | Servidor de alarmas en un PC (Python) | Ver siguiente sección |
+| Compatibilidad con cámaras Blurams / Ease Life (protocolo Closeli) | Solo investigado, no implementado. Descubrimiento LAN (UDP 9999/40080, JSON+AES-128) es replicable; vídeo/PTZ depende de un SDK P2P propietario (ArcSoft), ver `docs/PROTOCOL_CLOSELI.md` |
 
 **Limitaciones técnicas**
 
