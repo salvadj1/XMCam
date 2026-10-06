@@ -51,6 +51,7 @@ fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
         CfgBlock("FTP", "Servidor donde la cámara sube fotos y vídeos de las alarmas.", "NetWork.NetFTP", null),
         CfgBlock("Codificación de vídeo", "Resolución, calidad y fotogramas del flujo principal y secundario.", "Simplify.Encode", null),
         CfgBlock("Imagen", "Brillo, contraste, espejo, giro y modo infrarrojo.", "Camera.Param", null),
+        CfgBlock("Imagen: extras", "WDR, poca luz, estabilizador, modo pasillo y corrección de distorsión.", "Camera.ParamEx", null),
         CfgBlock("Texto en pantalla (OSD)", "Nombre y hora que se dibujan sobre el vídeo.", "AVEnc.VideoWidget", null),
         CfgBlock("Red", "IP, puerta de enlace y puertos de la cámara.", "NetWork.NetCommon", null),
         CfgBlock("WiFi", "Red inalámbrica a la que se conecta la cámara.", "NetWork.Wifi", null),

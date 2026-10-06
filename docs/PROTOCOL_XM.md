@@ -263,3 +263,15 @@ Algunas versiones recientes de iCSee/XMEye solo responden al DVRIP **cifrado** q
 - Se han publicado vulnerabilidades en firmwares XM (p. ej. ONVIF sin autenticación). Desactiva ONVIF si no lo usas y
   cambia las credenciales por defecto.
 - El hash XM equivale a la contraseña; no lo registres en logs.
+
+## Reproducción y descarga de clips de la SD
+
+Verificado por otros proyectos con cámaras iCSee/XMEye (voidnullvalue/Icsee-android, MIT); sin probar aún con la cámara de este proyecto.
+
+1. `OPFileQuery` (1440) → lista de clips (`FileName`, `BeginTime`, `EndTime`).
+2. `OPPlayBack` **Claim** en el mensaje 1424 (esperar la respuesta 1425).
+3. `OPPlayBack` **DownloadStart** en el mensaje 1420, con el mismo cuerpo: `{"Name":"OPPlayBack","OPPlayBack":{"Action":"DownloadStart","StartTime":..,"EndTime":..,"Parameter":{"PlayMode":"ByName","FileName":..,"StreamType":0,"Value":0,"TransMode":"TCP"}},"SessionID":..}`.
+4. Los datos llegan por el mensaje 1426 hasta un paquete de longitud 0. Se ignoran los paquetes cuyo cuerpo empieza por `{` (respuestas de control).
+5. `DownloadStop` (1420) y cerrar la sesión. La cámara solo atiende **una descarga a la vez**.
+
+El contenido es vídeo H.265 (a veces H.264) con envoltorios XM (NAL 0xF9/0xFA/0xFC/0xFD). La app extrae las NAL de vídeo (`XmClipParser`), las vuelve a empaquetar en MP4 con `MediaMuxer` (`ClipConverter`) y lo reproduce con Media3. Las miniaturas salen del primer fotograma de los primeros ~768 KB del clip. Por ahora el MP4 no incluye audio.

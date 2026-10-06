@@ -16,6 +16,10 @@ object Msg {
     const val CONFIG_GET = 1042
     const val ABILITY = 1360
     const val PTZ = 1400
+    /** OPPlayBack: DownloadStart / DownloadStop (1420), Claim (1424); los datos llegan por 1426. */
+    const val PB_CTRL = 1420
+    const val PB_CLAIM = 1424
+    const val PB_DATA = 1426
     const val FILE_QUERY = 1440
     const val MACHINE = 1450
     const val TIME_QUERY = 1452

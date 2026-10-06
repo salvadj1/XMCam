@@ -214,6 +214,21 @@ class DvripClient(
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
     }
 
+    /**
+     * Cuerpo JSON del mensaje OPPlayBack. [action]: "Claim", "DownloadStart" o "DownloadStop".
+     * [fileName], [begin] y [end] salen de la lista de [queryFiles] (fechas "yyyy-MM-dd HH:mm:ss").
+     */
+    fun playbackBody(action: String, fileName: String, begin: String, end: String): JSONObject =
+        base("OPPlayBack").put(
+            "OPPlayBack", JSONObject()
+                .put("Action", action).put("StartTime", begin).put("EndTime", end)
+                .put(
+                    "Parameter", JSONObject()
+                        .put("PlayMode", "ByName").put("FileName", fileName)
+                        .put("StreamType", 0).put("Value", 0).put("TransMode", "TCP")
+                )
+        )
+
     companion object {
         /** Valor de `Preset` que INICIA un movimiento continuo (verificado en capturas de tráfico y python-dvr). */
         const val PTZ_START = 65535

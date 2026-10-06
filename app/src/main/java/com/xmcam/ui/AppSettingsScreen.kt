@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.xmcam.App
-import com.xmcam.data.Store
 
 /**
  * Ajustes de la propia app (no de una cámara).
@@ -39,7 +38,6 @@ fun AppSettingsScreen(back: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
     var autoThumbs by remember { mutableStateOf(app.store.autoThumbs) }
     var autoSnap by remember { mutableStateOf(app.store.autoSnapOnAlarm) }
-    var template by remember { mutableStateOf(app.store.playbackTemplate) }
     val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
 
     Scaffold(topBar = { Bar("Ajustes de la app", back) }) { pad ->
@@ -90,20 +88,9 @@ fun AppSettingsScreen(back: () -> Unit) {
             SettingRow("Foto automática en cada alarma", "Guarda una foto al saltar una alarma; se usa como miniatura en Grabaciones y Eventos.") {
                 Switch(autoSnap, { autoSnap = it; app.store.autoSnapOnAlarm = it })
             }
-            SettingRow("Generar miniaturas de los clips", "Al abrir Grabaciones, reproduce unos segundos de cada clip sin foto para crear su miniatura. Usa la cámara un momento por clip.") {
+            SettingRow("Generar miniaturas de los clips", "Al abrir Grabaciones, descarga el principio de cada clip sin foto para crear su miniatura. Usa la cámara unos segundos por clip.") {
                 Switch(autoThumbs, { autoThumbs = it; app.store.autoThumbs = it })
             }
-            Text("Dirección de reproducción (experimental)", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyLarge)
-            Text(
-                "Dirección RTSP para ver clips de la SD. Variables: {host} {port} {user} {pass} {channel} {start} {end}. " +
-                    "Cada firmware usa su formato: si el clip no abre, ajústala aquí.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                template, { template = it; app.store.playbackTemplate = it },
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp), textStyle = MaterialTheme.typography.bodySmall
-            )
-            TextButton({ template = Store.DEFAULT_PLAYBACK_TEMPLATE; app.store.playbackTemplate = template }) { Text("Restaurar valor por defecto") }
 
             SectionTitle("Almacenamiento")
             SettingRow("Borrar caché", "Elimina fotos temporales y miniaturas. Ocupa ${formatBytes(cacheBytes)}.") {

@@ -82,6 +82,10 @@ class App : Application() {
     fun thumbFile(camId: String, begin: String): File =
         File(File(filesDir, "thumbs").apply { mkdirs() }, "${camId.take(8)}_${begin.filter { it.isDigit() }}.jpg")
 
+    /** MP4 convertido de un clip en la caché (se borra con "Borrar caché"). */
+    fun clipFile(camId: String, begin: String): File =
+        File(File(cacheDir, "clips").apply { mkdirs() }, "${camId.take(8)}_${begin.filter { it.isDigit() }}_v2.mp4")
+
     companion object {
         lateinit var instance: App
         const val CH_ALARM = "alarms"

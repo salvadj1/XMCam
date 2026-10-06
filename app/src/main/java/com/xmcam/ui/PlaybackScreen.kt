@@ -13,9 +13,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
-import android.view.TextureView
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
+import com.xmcam.data.ClipRepo
 import com.xmcam.data.EventRec
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,8 +39,8 @@ import java.util.Locale
 /**
  * Galería de grabaciones de la tarjeta SD: cuadrícula de miniaturas por día (mensaje OPFileQuery).
  *
- * Miniatura (por orden): foto de una alarma dentro del clip, fotograma generado reproduciendo
- * unos instantes el clip ([captureRtspThumbnail]) o, si eso falla, una tarjeta con la hora. Bajo cada clip se muestra el motivo de la grabación.
+ * Miniatura (por orden): foto de una alarma dentro del clip, primer fotograma del clip ([ClipRepo.thumbnail],
+ * descargando solo su principio) o, si eso falla, una tarjeta con la hora. Bajo cada clip se muestra el motivo de la grabación.
  * Al volver desde [ClipPlayerScreen] se restauran el día y la posición de la lista.
  */
 @Composable
@@ -63,10 +62,8 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
     val gridState = rememberLazyGridState(restore?.index ?: 0, restore?.offset ?: 0)
     var pendingRestore by remember { mutableStateOf(restore != null) }
 
-    // Generación de miniaturas: estado de progreso y superficie diminuta donde se reproduce cada clip.
-    val ctx = LocalContext.current
+    // Generación de miniaturas: progreso (se descarga el principio de cada clip y se saca su primer fotograma).
     var thumbTick by remember { mutableIntStateOf(0) }
-    var genTexture by remember { mutableStateOf<TextureView?>(null) }
     var generating by remember { mutableStateOf(false) }
     var genDone by remember { mutableIntStateOf(0) }
     var genTotal by remember { mutableIntStateOf(0) }
@@ -102,21 +99,16 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
     LaunchedEffect(files, genTrigger) {
         if (!app.store.autoThumbs || files.isEmpty()) return@LaunchedEffect
         val pending = files.filter { f ->
-            eventFor(f)?.snapshot == null && !app.thumbFile(camId, f.optString("BeginTime")).exists()
+            f.optString("FileName").isNotEmpty() && eventFor(f)?.snapshot == null &&
+                !app.thumbFile(camId, f.optString("BeginTime")).exists()
         }.take(30)
         if (pending.isEmpty()) return@LaunchedEffect
-        genTexture = null
         generating = true; genFailed = false; genDone = 0; genTotal = pending.size
         try {
             var fails = 0
             for (f in pending) {
-                var tv = genTexture
-                var waited = 0
-                while (tv == null && waited < 20) { delay(100); tv = genTexture; waited++ }
-                if (tv == null) break
                 val begin = f.optString("BeginTime")
-                val url = cam.playbackUrl(app.store.playbackTemplate, begin, f.optString("EndTime"))
-                val ok = captureRtspThumbnail(ctx, url, tv, app.thumbFile(camId, begin))
+                val ok = ClipRepo.thumbnail(app, cam, f.optString("FileName"), begin, f.optString("EndTime"), app.thumbFile(camId, begin))
                 genDone++
                 if (ok) { thumbTick++; fails = 0 } else if (++fails >= 2) { genFailed = true; break }
             }
@@ -135,11 +127,7 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
             }
             Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (generating) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AndroidView(
-                    factory = { TextureView(it).also { v -> genTexture = v } },
-                    modifier = Modifier.size(48.dp, 27.dp).clip(RoundedCornerShape(6.dp))
-                )
-                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                Column(Modifier.weight(1f)) {
                     Text("Generando miniaturas $genDone/$genTotal…", style = MaterialTheme.typography.bodySmall)
                     LinearProgressIndicator(
                         progress = { if (genTotal == 0) 0f else genDone / genTotal.toFloat() },
@@ -149,7 +137,7 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
             }
             if (genFailed) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "No se pudieron generar miniaturas. Revisa la dirección de reproducción en Ajustes de la app.",
+                    "No se pudieron generar las miniaturas (el móvil o la cámara no pudieron leer el inicio de los clips).",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
                 )
                 TextButton({ genTrigger++ }) { Text("Reintentar") }
@@ -172,7 +160,7 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
                     val reason = ev?.let { XmEvents.label(it.event) } ?: reasonFromFileName(f.optString("FileName"))
                     ClipTile(begin.takeLast(8).take(5), formatDuration(seconds), reason, thumb) {
                         app.playbackPos[camId] = PlaybackPos(day, gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
-                        nav(Screen.Clip(camId, begin, end))
+                        nav(Screen.Clip(camId, f.optString("FileName"), begin, end))
                     }
                 }
             }

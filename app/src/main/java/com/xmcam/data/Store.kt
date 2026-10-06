@@ -70,15 +70,10 @@ class Store(ctx: Context) {
         get() = prefs.getBoolean("autoSnap", true)
         set(v) = prefs.edit().putBoolean("autoSnap", v).apply()
 
-    /** Si al abrir Grabaciones se generan miniaturas reproduciendo unos instantes de cada clip sin foto. */
+    /** Si al abrir Grabaciones se generan miniaturas descargando el principio de cada clip sin foto. */
     var autoThumbs: Boolean
         get() = prefs.getBoolean("autoThumbs", true)
         set(v) = prefs.edit().putBoolean("autoThumbs", v).apply()
-
-    /** Plantilla RTSP para reproducir clips de la SD (ver [Camera.playbackUrl]). Experimental. */
-    var playbackTemplate: String
-        get() = prefs.getString("playbackTemplate", DEFAULT_PLAYBACK_TEMPLATE)!!
-        set(v) = prefs.edit().putString("playbackTemplate", v).apply()
 
     fun loadEvents(dir: File): List<EventRec> = try {
         val arr = JSONArray(File(dir, "events.json").readText())
@@ -87,12 +82,6 @@ class Store(ctx: Context) {
 
     fun saveEvents(dir: File, l: List<EventRec>) {
         runCatching { File(dir, "events.json").writeText(JSONArray(l.map { it.toJson() }).toString()) }
-    }
-
-    companion object {
-        /** Suposición de partida (NO verificada con una cámara real); se puede editar en Ajustes de la app. */
-        const val DEFAULT_PLAYBACK_TEMPLATE =
-            "rtsp://{host}:{port}/user={user}&password={pass}&channel={channel}&stream=0.sdp?starttime={start}&endtime={end}"
     }
 
     private fun readArray(key: String): List<org.json.JSONObject> = try {

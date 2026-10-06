@@ -24,7 +24,7 @@ sealed interface Screen {
     data class Live(val camId: String) : Screen
     data class Playback(val camId: String) : Screen
     /** Reproductor de un clip de la SD; [begin] y [end] en formato "yyyy-MM-dd HH:mm:ss". */
-    data class Clip(val camId: String, val begin: String, val end: String) : Screen
+    data class Clip(val camId: String, val fileName: String, val begin: String, val end: String) : Screen
     data class Settings(val camId: String) : Screen
     /** Editor genérico de un bloque de configuración; [filter] es una regex sobre la ruta de cada ajuste. */
     data class Config(val camId: String, val name: String, val filter: String?) : Screen
