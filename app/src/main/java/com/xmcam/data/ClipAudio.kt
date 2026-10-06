@@ -3,6 +3,7 @@ package com.xmcam.data
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.util.Log
 import com.xmcam.protocol.XmClipAudio
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -12,6 +13,7 @@ class AacTrack(val csd: ByteArray, val samples: List<ByteArray>, val ptsUs: Long
 
 /** Convierte el audio A-law de un clip XM a AAC para poder meterlo en un MP4. */
 object ClipAudio {
+    private const val TAG = "XMCamAudio"
     private const val SAMPLE_RATE = 8_000
     private const val FRAME_SAMPLES = 1024 // una trama AAC-LC
     /** Configuración AAC-LC, 8 kHz, mono (por si el codificador no la devuelve). */
@@ -23,8 +25,13 @@ object ClipAudio {
      */
     fun fromClip(nals: List<ByteArray>): AacTrack? {
         val alaw = XmClipAudio.extractAlaw(nals)
-        if (alaw.size < 320) return null
-        return runCatching { encodeAac(XmClipAudio.alawToPcm(alaw)) }.getOrNull()
+        Log.i(TAG, "A-law extraído: ${alaw.size} bytes de ${nals.size} NAL")
+        Log.i(TAG, XmClipAudio.diagnose(nals))
+        if (alaw.size < 320) { Log.w(TAG, "Clip sin audio reconocible (ver XmClipAudio.extractAlaw)"); return null }
+        return runCatching { encodeAac(XmClipAudio.alawToPcm(alaw)) }
+            .onFailure { Log.e(TAG, "Fallo al codificar AAC", it) }
+            .getOrNull()
+            .also { Log.i(TAG, "AAC: ${it?.samples?.size ?: 0} tramas, csd=${it?.csd?.size ?: 0} bytes") }
     }
 
     /** Formato de pista de audio para MediaMuxer a partir de la configuración [csd]. */

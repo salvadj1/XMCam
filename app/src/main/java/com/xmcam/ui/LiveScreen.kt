@@ -11,6 +11,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,10 +45,24 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Vídeo en directo (RTSP) + PTZ + presets + captura + silenciar. */
+/** Paneles que se pueden mostrar bajo el stream. */
+private enum class Panel { LIVE, RECORDINGS, SETTINGS, INFO }
+
+/** Panel a restaurar al volver (p. ej. tras abrir un clip o un bloque de configuración), por cámara. */
+private val pendingPanel = mutableMapOf<String, Panel>()
+
+/**
+ * Pantalla de una cámara: stream siempre visible arriba, barra de iconos (directo, grabaciones,
+ * ajustes, info) debajo y, en el resto de la pantalla, el panel elegido.
+ * El panel "directo" contiene HD/SD, audio, foto, PTZ y posiciones guardadas.
+ */
 @Composable
-fun LiveScreen(camId: String, back: () -> Unit) {
-    val cam = App.instance.cameras.value.first { it.id == camId }
+fun LiveScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
+    val cams by App.instance.cameras.collectAsState()
+    val cam = cams.first { it.id == camId }
+    var panel by remember { mutableStateOf(pendingPanel.remove(camId) ?: Panel.LIVE) }
+    // Al abrir otra pantalla desde un panel se recuerda cuál era, para volver a él.
+    val navKeep: (Screen) -> Unit = { pendingPanel[camId] = panel; nav(it) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val session = remember { ControlSession(cam) }
@@ -99,7 +118,7 @@ fun LiveScreen(camId: String, back: () -> Unit) {
     }
 
     Scaffold(topBar = { Bar(cam.name, back) }) { pad ->
-        Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
+        Column(Modifier.padding(pad)) {
             Box(Modifier.padding(12.dp).fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp))) {
                 AndroidView(
                     factory = { PlayerView(it).apply { useController = false } },
@@ -109,19 +128,64 @@ fun LiveScreen(camId: String, back: () -> Unit) {
                 LiveBadge("EN VIVO", Color(0xFFD32F2F), Modifier.align(Alignment.TopStart).padding(8.dp))
                 LiveBadge(if (stream == 0) "HD" else "SD", Color.Black.copy(alpha = 0.55f), Modifier.align(Alignment.TopEnd).padding(8.dp))
             }
-            Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(stream == 0, { stream = 0 }, { Text("HD") })
-                FilterChip(stream == 1, { stream = 1 }, { Text("SD") })
-                FilledTonalButton({ muted = !muted }) { Text(if (muted) "Sin audio" else "Audio") }
-                FilledTonalButton({
-                    scope.launch {
-                        status = "Capturando…"
-                        val ok = withContext(Dispatchers.IO) { Net.snapshot(cam, ctx.cacheDir)?.let { Net.saveToGallery(ctx, it) } ?: false }
-                        status = if (ok) "Foto guardada en Pictures/XMCam" else "No se pudo capturar"
-                    }
-                }) { Text("Foto") }
-            }
             if (status.isNotEmpty()) Text(status, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
+            PanelBar(panel) { panel = it }
+            HorizontalDivider()
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (panel) {
+                    Panel.LIVE -> LivePanel(
+                        stream, { stream = it }, muted, { muted = !muted },
+                        onPhoto = {
+                            scope.launch {
+                                status = "Capturando…"
+                                val ok = withContext(Dispatchers.IO) { Net.snapshot(cam, ctx.cacheDir)?.let { Net.saveToGallery(ctx, it) } ?: false }
+                                status = if (ok) "Foto guardada en Pictures/XMCam" else "No se pudo capturar"
+                            }
+                        },
+                        ptzCtl = ptzCtl, onPreset = ::preset
+                    )
+                    Panel.RECORDINGS -> PlaybackScreen(camId, navKeep, back, embedded = true)
+                    Panel.SETTINGS -> SettingsScreen(camId, navKeep, back, embedded = true)
+                    Panel.INFO -> CameraInfoPanel(cam)
+                }
+            }
+        }
+    }
+}
+
+/** Barra de iconos para elegir el panel inferior; el seleccionado se resalta. */
+@Composable
+private fun PanelBar(selected: Panel, onSelect: (Panel) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        listOf(
+            Triple(Panel.LIVE, Icons.Default.PlayArrow, "Directo"),
+            Triple(Panel.RECORDINGS, Icons.Default.List, "Grabaciones"),
+            Triple(Panel.SETTINGS, Icons.Default.Settings, "Ajustes"),
+            Triple(Panel.INFO, Icons.Default.Info, "Info")
+        ).forEach { (p, icon, desc) ->
+            IconButton(
+                { onSelect(p) },
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = if (p == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) { Icon(icon, contentDescription = desc) }
+        }
+    }
+}
+
+/** Panel "directo": calidad HD/SD, audio, foto, joystick PTZ y posiciones guardadas. */
+@Composable
+private fun LivePanel(
+    stream: Int, onStream: (Int) -> Unit, muted: Boolean, onMute: () -> Unit, onPhoto: () -> Unit,
+    ptzCtl: PtzController, onPreset: (String, Int) -> Unit
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(stream == 0, { onStream(0) }, { Text("HD") })
+                FilterChip(stream == 1, { onStream(1) }, { Text("SD") })
+                FilledTonalButton(onMute) { Text(if (muted) "Sin audio" else "Audio") }
+                FilledTonalButton(onPhoto) { Text("Foto") }
+            }
 
             LiveSection("Control de la cámara", "Arrastra el joystick para mover la cámara; al soltar se detiene.")
             Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -141,13 +205,12 @@ fun LiveScreen(camId: String, back: () -> Unit) {
                 (1..6).forEach { n ->
                     Box(
                         Modifier.size(46.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
-                            .combinedClickable(onClick = { preset(PtzCmd.GOTO_PRESET, n) }, onLongClick = { preset(PtzCmd.SET_PRESET, n) }),
+                            .combinedClickable(onClick = { onPreset(PtzCmd.GOTO_PRESET, n) }, onLongClick = { onPreset(PtzCmd.SET_PRESET, n) }),
                         contentAlignment = Alignment.Center
                     ) { Text("$n") }
                 }
             }
             Spacer(Modifier.height(24.dp))
-        }
     }
 }
 

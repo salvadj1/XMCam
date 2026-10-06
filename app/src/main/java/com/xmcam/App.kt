@@ -84,7 +84,7 @@ class App : Application() {
 
     /** MP4 convertido de un clip en la caché (se borra con "Borrar caché"). */
     fun clipFile(camId: String, begin: String): File =
-        File(File(cacheDir, "clips").apply { mkdirs() }, "${camId.take(8)}_${begin.filter { it.isDigit() }}_v2.mp4")
+        File(File(cacheDir, "clips").apply { mkdirs() }, "${camId.take(8)}_${begin.filter { it.isDigit() }}_v3.mp4")
 
     companion object {
         lateinit var instance: App

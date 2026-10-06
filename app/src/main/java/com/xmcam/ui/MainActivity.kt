@@ -35,7 +35,7 @@ private fun Root() {
         is Screen.Events -> EventsScreen(back)
         is Screen.Rules -> RulesScreen(nav, back)
         is Screen.AppSettings -> AppSettingsScreen(back)
-        is Screen.Live -> LiveScreen(s.camId, back)
+        is Screen.Live -> LiveScreen(s.camId, nav, back)
         is Screen.Playback -> PlaybackScreen(s.camId, nav, back)
         is Screen.Clip -> ClipPlayerScreen(s.camId, s.fileName, s.begin, s.end, back)
         is Screen.Settings -> SettingsScreen(s.camId, nav, back)

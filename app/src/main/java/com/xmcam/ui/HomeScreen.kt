@@ -124,9 +124,7 @@ fun HomeScreen(nav: (Screen) -> Unit) {
                 CameraCard(
                     cam, up, reach[cam.id], previews[cam.id],
                     last?.let { "Último evento: ${XmEvents.label(it.event)} · ${relativeTime(it.time)}" } ?: "Sin eventos recientes",
-                    onLive = { nav(Screen.Live(cam.id)) },
-                    onRecordings = { nav(Screen.Playback(cam.id)) },
-                    onSettings = { nav(Screen.Settings(cam.id)) },
+                    onOpen = { nav(Screen.Live(cam.id)) },
                     onDelete = { toDelete = cam }
                 )
             }
@@ -206,7 +204,7 @@ private fun EmptyCameras(onAdd: () -> Unit) {
 
 /**
  * Tarjeta de una cámara: vista previa con estado superpuesto, nombre, dirección, último evento
- * y botones Directo / Grabaciones / Ajustes, más Borrar.
+ * y Borrar. Al pulsar la tarjeta se abre la pantalla de la cámara ([onOpen]).
  *
  * @param up       true si la cámara está en línea.
  * @param reachable resultado de la última comprobación (null = comprobando).
@@ -216,9 +214,9 @@ private fun EmptyCameras(onAdd: () -> Unit) {
 @Composable
 private fun CameraCard(
     cam: Camera, up: Boolean, reachable: Boolean?, preview: ImageBitmap?, lastEvent: String,
-    onLive: () -> Unit, onRecordings: () -> Unit, onSettings: () -> Unit, onDelete: () -> Unit
+    onOpen: () -> Unit, onDelete: () -> Unit
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.secondaryContainer)) {
             if (preview != null) Image(preview, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
             else Text(
@@ -247,13 +245,7 @@ private fun CameraCard(
                 }
                 TextButton(onDelete) { Text("Borrar", color = MaterialTheme.colorScheme.error) }
             }
-            Text(lastEvent, Modifier.padding(top = 2.dp, bottom = 10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val pad = PaddingValues(horizontal = 4.dp)
-                FilledTonalButton(onLive, Modifier.weight(1f), contentPadding = pad) { Text("Directo", maxLines = 1) }
-                OutlinedButton(onRecordings, Modifier.weight(1f), contentPadding = pad) { Text("Grabaciones", maxLines = 1) }
-                OutlinedButton(onSettings, Modifier.weight(1f), contentPadding = pad) { Text("Ajustes", maxLines = 1) }
-            }
+            Text(lastEvent, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -17,31 +17,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Ajustes de una cámara: información, acceso a todos los bloques de configuración, hora y reinicio. */
+/** Ajustes de una cámara: acceso a todos los bloques de configuración, hora y reinicio. Con [embedded] se omite la barra superior (se usa como panel de LiveScreen). */
 @Composable
-fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
+fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit, embedded: Boolean = false) {
     val app = App.instance
     val cam = app.cameras.value.first { it.id == camId }
     val scope = rememberCoroutineScope()
     val session = remember { ControlSession(cam) }
     DisposableEffect(Unit) { onDispose { session.close() } }
 
-    var info by remember { mutableStateOf("Cargando…") }
     var msg by remember { mutableStateOf("") }
     var confirmReboot by remember { mutableStateOf(false) }
     var custom by remember { mutableStateOf("") }
     var monitor by remember { mutableStateOf(cam.monitor) }
     var rtspHash by remember { mutableStateOf(cam.rtspHash) }
-
-    LaunchedEffect(Unit) {
-        info = runCatching {
-            session.exec { c ->
-                val si = c.systemInfo()
-                val t = runCatching { c.getTime() }.getOrDefault("?")
-                si.keys().asSequence().joinToString("\n") { "$it: ${si.opt(it)}" } + "\nHora de la cámara: $t"
-            }
-        }.getOrElse { "Error: ${it.message}" }
-    }
 
     // (título, descripción, bloque de configuración, filtro regex de ajustes visibles)
     val blocks = listOf(
@@ -63,11 +52,11 @@ fun SettingsScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
         CfgBlock("PTZ (protocolo)", "Protocolo, dirección y velocidad del motor de giro.", "Uart.PTZ", null)
     )
 
-    Scaffold(topBar = { Bar("Ajustes · ${cam.name}", back) }) { pad ->
+    Scaffold(
+        topBar = { if (!embedded) Bar("Ajustes · ${cam.name}", back) },
+        contentWindowInsets = if (embedded) WindowInsets(0) else ScaffoldDefaults.contentWindowInsets
+    ) { pad ->
         Column(Modifier.padding(pad).padding(12.dp).verticalScroll(rememberScrollState())) {
-            SectionTitle("Información")
-            Card(Modifier.fillMaxWidth()) { Text(info, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
-
             SectionTitle("En esta app")
             SettingRow("Vigilar alarmas de esta cámara", "Recibes avisos de esta cámara cuando la vigilancia en segundo plano está activada.") {
                 Switch(monitor, { monitor = it; app.saveCameras(app.cameras.value.map { c -> if (c.id == cam.id) c.copy(monitor = it) else c }) })

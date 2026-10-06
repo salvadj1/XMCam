@@ -33,8 +33,12 @@ import com.xmcam.data.ControlSession
 import com.xmcam.protocol.XmEvents
 import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.io.File
 import java.time.LocalDate
 import java.util.Locale
+
+/** Margen (ms) alrededor del clip en el que una foto de alarma se considera suya. */
+private const val SNAP_MARGIN_MS = 10_000L
 
 /**
  * Galería de grabaciones de la tarjeta SD: cuadrícula de miniaturas por día (mensaje OPFileQuery).
@@ -42,9 +46,10 @@ import java.util.Locale
  * Miniatura (por orden): foto de una alarma dentro del clip, primer fotograma del clip ([ClipRepo.thumbnail],
  * descargando solo su principio) o, si eso falla, una tarjeta con la hora. Bajo cada clip se muestra el motivo de la grabación.
  * Al volver desde [ClipPlayerScreen] se restauran el día y la posición de la lista.
+ * Con [embedded] se omite la barra superior (se usa como panel de LiveScreen).
  */
 @Composable
-fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
+fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit, embedded: Boolean = false) {
     val app = App.instance
     val cam = app.cameras.value.first { it.id == camId }
     val session = remember { ControlSession(cam) }
@@ -69,12 +74,17 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
     var genTotal by remember { mutableIntStateOf(0) }
     var genFailed by remember { mutableStateOf(false) }
     var genTrigger by remember { mutableIntStateOf(0) }
-    // Alarma de esta cámara que caiga dentro del clip [f] (da foto y motivo reales).
+    // Alarma de esta cámara que caiga dentro del clip [f] (± SNAP_MARGIN_MS). Prefiere la que tenga foto guardada.
     val eventFor: (JSONObject) -> EventRec? = { f ->
         val b = runCatching { fmt.parse(f.optString("BeginTime"))?.time }.getOrNull()
         val e = runCatching { fmt.parse(f.optString("EndTime"))?.time }.getOrNull()
-        if (b != null && e != null) events.firstOrNull { x -> x.cameraId == cam.id && x.time in b..e } else null
+        if (b != null && e != null) {
+            val near = events.filter { x -> x.cameraId == cam.id && x.time in (b - SNAP_MARGIN_MS)..(e + SNAP_MARGIN_MS) }
+            near.firstOrNull { x -> x.snapshot?.let { File(it).exists() } == true } ?: near.firstOrNull()
+        } else null
     }
+    // Ruta de la foto de alarma del clip [f], solo si el archivo existe.
+    val snapFor: (JSONObject) -> String? = { f -> eventFor(f)?.snapshot?.takeIf { File(it).exists() } }
 
     LaunchedEffect(day) {
         files = app.playbackCache["$camId|$day"] ?: emptyList()
@@ -99,7 +109,7 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
     LaunchedEffect(files, genTrigger) {
         if (!app.store.autoThumbs || files.isEmpty()) return@LaunchedEffect
         val pending = files.filter { f ->
-            f.optString("FileName").isNotEmpty() && eventFor(f)?.snapshot == null &&
+            f.optString("FileName").isNotEmpty() && snapFor(f) == null &&
                 !app.thumbFile(camId, f.optString("BeginTime")).exists()
         }.take(30)
         if (pending.isEmpty()) return@LaunchedEffect
@@ -117,7 +127,10 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
         }
     }
 
-    Scaffold(topBar = { Bar("Grabaciones · ${cam.name}", back) }) { pad ->
+    Scaffold(
+        topBar = { if (!embedded) Bar("Grabaciones · ${cam.name}", back) },
+        contentWindowInsets = if (embedded) WindowInsets(0) else ScaffoldDefaults.contentWindowInsets
+    ) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 12.dp)) {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
                 days.forEachIndexed { i, d ->
@@ -155,7 +168,7 @@ fun PlaybackScreen(camId: String, nav: (Screen) -> Unit, back: () -> Unit) {
                     val e = runCatching { fmt.parse(end)?.time }.getOrNull()
                     val tick = thumbTick // al leerlo, la miniatura se actualiza en cuanto se genera
                     val ev = eventFor(f)
-                    val thumb = ev?.snapshot ?: app.thumbFile(camId, begin).takeIf { tick >= 0 && it.exists() }?.absolutePath
+                    val thumb = snapFor(f) ?: app.thumbFile(camId, begin).takeIf { tick >= 0 && it.exists() }?.absolutePath
                     val seconds = if (b != null && e != null) ((e - b) / 1000).coerceAtLeast(0) else 0L
                     val reason = ev?.let { XmEvents.label(it.event) } ?: reasonFromFileName(f.optString("FileName"))
                     ClipTile(begin.takeLast(8).take(5), formatDuration(seconds), reason, thumb) {

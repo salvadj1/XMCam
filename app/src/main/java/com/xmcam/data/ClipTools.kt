@@ -94,6 +94,7 @@ object ClipConverter {
         val top = XmClipParser.splitAnnexB(raw)
         val parsed = XmClipParser.parse(raw, top)
         val aac = if (withAudio) ClipAudio.fromClip(top) else null
+        if (withAudio && aac == null) android.util.Log.w("XMCamAudio", "MP4 generado SIN audio")
         when (parsed) {
             is XmClipParser.Parsed.Hevc -> {
                 val t = parsed.track
