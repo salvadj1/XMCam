@@ -5,6 +5,11 @@ package com.xmcam.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -23,6 +28,8 @@ sealed interface Screen {
     data object AppSettings : Screen
     data class Live(val camId: String) : Screen
     data class Playback(val camId: String) : Screen
+    /** Galería unificada (vista previa + línea de tiempo + listado); [camId] preselecciona una cámara, null = todas. */
+    data class Gallery(val camId: String? = null) : Screen
     /** Reproductor de un clip de la SD; [begin] y [end] en formato "yyyy-MM-dd HH:mm:ss". */
     data class Clip(val camId: String, val fileName: String, val begin: String, val end: String) : Screen
     data class Settings(val camId: String) : Screen
@@ -67,4 +74,36 @@ fun Field(label: String, value: String, onChange: (String) -> Unit, number: Bool
 @Composable
 fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+}
+
+/** Pestañas de la barra inferior principal. */
+enum class MainTab { MOSAIC, GALLERY, EVENTS, SETTINGS }
+
+/**
+ * Barra de navegación inferior común (Mosaico, Galería, Eventos, Ajustes).
+ * Reutilizable en cualquier pantalla principal.
+ *
+ * @param selected pestaña activa (se resalta y no navega al pulsarla).
+ * @param nav      función de navegación de la app.
+ */
+@Composable
+fun MainNavBar(selected: MainTab, nav: (Screen) -> Unit) {
+    NavigationBar {
+        NavigationBarItem(
+            selected == MainTab.MOSAIC, { if (selected != MainTab.MOSAIC) nav(Screen.Home) },
+            { Icon(Icons.Default.Home, null) }, label = { Text("Mosaico") }
+        )
+        NavigationBarItem(
+            selected == MainTab.GALLERY, { if (selected != MainTab.GALLERY) nav(Screen.Gallery()) },
+            { Icon(Icons.Default.DateRange, null) }, label = { Text("Galería") }
+        )
+        NavigationBarItem(
+            selected == MainTab.EVENTS, { if (selected != MainTab.EVENTS) nav(Screen.Events) },
+            { Icon(Icons.Default.Notifications, null) }, label = { Text("Eventos") }
+        )
+        NavigationBarItem(
+            selected == MainTab.SETTINGS, { if (selected != MainTab.SETTINGS) nav(Screen.AppSettings) },
+            { Icon(Icons.Default.Settings, null) }, label = { Text("Ajustes") }
+        )
+    }
 }

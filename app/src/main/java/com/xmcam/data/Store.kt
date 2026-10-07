@@ -65,6 +65,11 @@ class Store(ctx: Context) {
         get() = prefs.getBoolean("keepScreenOn", true)
         set(v) = prefs.edit().putBoolean("keepScreenOn", v).apply()
 
+    /** Distribución del mosaico de la pantalla principal (posición en MosaicLayout; 0 = cuadrícula 2x2). */
+    var mosaicLayout: Int
+        get() = prefs.getInt("mosaicLayout", 0)
+        set(v) = prefs.edit().putInt("mosaicLayout", v).apply()
+
     /** Si se guarda una foto automática en cada alarma (sirve de miniatura en Grabaciones y Eventos). */
     var autoSnapOnAlarm: Boolean
         get() = prefs.getBoolean("autoSnap", true)

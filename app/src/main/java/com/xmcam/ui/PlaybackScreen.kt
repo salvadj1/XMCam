@@ -223,7 +223,7 @@ fun ClipTile(timeLabel: String, duration: String, reason: String, snapshotPath: 
  * (p. ej. "...[M]..."). Mapeo habitual en firmwares XM, sin verificar con todas las cámaras:
  * M = movimiento, A = alarma, H = manual, R = continua.
  */
-private fun reasonFromFileName(name: String): String {
+internal fun reasonFromFileName(name: String): String {
     val tag = Regex("\\[([A-Za-z])\\]").find(name)?.groupValues?.get(1)?.uppercase()
     return when (tag) {
         "M" -> "Movimiento"
@@ -235,7 +235,7 @@ private fun reasonFromFileName(name: String): String {
 }
 
 /** Convierte [totalSeconds] a "m:ss" o "h:mm:ss". */
-private fun formatDuration(totalSeconds: Long): String {
+internal fun formatDuration(totalSeconds: Long): String {
     val h = totalSeconds / 3600
     val m = (totalSeconds % 3600) / 60
     val s = totalSeconds % 60
